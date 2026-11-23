@@ -1,4 +1,4 @@
-alpha,success_rate,average_iterations
-0.995,1.0,14.8
-0.998,1.0,14.8
-0.999,1.0,14.8
+alpha,success_rate,successful_runs,average_iterations_to_solution,average_terminal_temperature,temperature_at_max_iterations
+0.99,1.0,5,14.8,44.47122225476127,4.063671586920452e-12
+0.995,1.0,5,14.8,46.92167801945993,1.4804343753747305e-05
+0.999,1.0,5,14.8,49.32590358216137,2.4881078077095173

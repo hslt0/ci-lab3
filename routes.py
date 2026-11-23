@@ -30,6 +30,10 @@ def register_routes(app):
             algorithm = payload.get("algorithm", "both")
             ga_parameters = payload.get("ga", {})
             sa_parameters = payload.get("sa", {})
+            if not isinstance(ga_parameters, dict):
+                raise ValueError("Параметр ga має бути JSON-об'єктом.")
+            if not isinstance(sa_parameters, dict):
+                raise ValueError("Параметр sa має бути JSON-об'єктом.")
             seed = payload.get("seed")
             if seed not in (None, ""):
                 if isinstance(seed, bool):

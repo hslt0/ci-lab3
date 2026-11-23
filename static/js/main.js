@@ -177,6 +177,8 @@ document.getElementById("run").addEventListener("click", async () => {
       finalTemperature: Number(document.getElementById("finalTemperature").value)
     }
   };
+  const alpha = document.getElementById("alpha").value.trim();
+  if (alpha !== "") payload.sa.alpha = Number(alpha);
 
   const button = document.getElementById("run");
   button.disabled = true;

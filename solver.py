@@ -3,6 +3,11 @@ import math
 import random
 
 
+SA_RESTART_INTERVAL = 300
+# Keep gene preferences meaningful instead of repairing across every candidate.
+GA_DECODE_ATTEMPTS = 40
+
+
 class ShipPlacementSolver:
     def __init__(self, size, ships, reefs, seed=None):
         self.size = size
@@ -59,7 +64,7 @@ class ShipPlacementSolver:
                 continue
             start = chromosome[position] % len(candidates)
             selected = None
-            for offset in range(len(candidates)):
+            for offset in range(min(GA_DECODE_ATTEMPTS, len(candidates))):
                 candidate = candidates[(start + offset) % len(candidates)]
                 if self.allowed(ship_index, candidate, occupied):
                     selected = candidate
@@ -164,8 +169,11 @@ class ShipPlacementSolver:
 
     def run_ga(self, population_size=60, generations=100, crossover_rate=0.9,
                mutation_rate=0.15, elitism=4):
-        population_size = max(12, int(population_size))
+        population_size = int(population_size)
+        if population_size < 2:
+            raise ValueError("population_size must be at least 2.")
         generations = max(1, int(generations))
+        elitism = min(max(0, int(elitism)), population_size)
         gene_count = len(self.ship_indices)
         population = [
             [self.rng.randrange(self.size * self.size * 2) for _ in range(gene_count)]
@@ -277,9 +285,10 @@ class ShipPlacementSolver:
         best_fitness = current_fitness
         history = []
         accepted_window = 0
-        window_size = 100
+        iterations_in_window = 0
 
         for iteration in range(max_iterations):
+            iterations_in_window += 1
             temperature = initial_temperature * (alpha ** iteration)
             neighbour = copy.deepcopy(current)
             neighbour_unplaced = list(unplaced)
@@ -297,7 +306,8 @@ class ShipPlacementSolver:
                         neighbour_unplaced.remove(ship_index)
                         break
             else:
-                if (iteration + 1) % 300 == 0:
+                if (iteration + 1) % SA_RESTART_INTERVAL == 0:
+                    # Random restart helps the search escape stagnation.
                     neighbour, neighbour_unplaced = self.greedy_random_state()
                 else:
                     movable = list(neighbour.keys())
@@ -338,7 +348,7 @@ class ShipPlacementSolver:
                     "current": round(current_fitness, 4),
                     "best": round(best_fitness, 4),
                     "temperature": round(temperature, 6),
-                    "acceptance": round(accepted_window / min(iteration + 1, window_size), 4),
+                    "acceptance": round(accepted_window / iterations_in_window, 4),
                 })
                 break
 
@@ -348,9 +358,10 @@ class ShipPlacementSolver:
                     "current": round(current_fitness, 4),
                     "best": round(best_fitness, 4),
                     "temperature": round(temperature, 6),
-                    "acceptance": round(accepted_window / window_size, 4),
+                    "acceptance": round(accepted_window / iterations_in_window, 4),
                 })
                 accepted_window = 0
+                iterations_in_window = 0
 
         violations = self.check_placements(best)
         if best_unplaced:

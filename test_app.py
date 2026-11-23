@@ -69,6 +69,51 @@ class SolverTests(unittest.TestCase):
         self.assertTrue(result["solved"])
         self.assertEqual(result["unplaced"], [])
 
+    def test_sa_acceptance_ratio_uses_logged_iteration_window(self):
+        result = ShipPlacementSolver(3, [1], set(), seed=7).run_sa(max_iterations=1)
+        self.assertEqual(result["history"][0]["iteration"], 1)
+        self.assertGreaterEqual(result["history"][0]["acceptance"], 0)
+        self.assertLessEqual(result["history"][0]["acceptance"], 1)
+        self.assertEqual(result["history"][0]["acceptance"], 1.0)
+
+    def test_sa_early_final_point_uses_partial_acceptance_window(self):
+        solver = ShipPlacementSolver(3, [1], set(), seed=7)
+        fitness_calls = [0]
+
+        def solve_on_31st_iteration(placements, unplaced):
+            fitness_calls[0] += 1
+            return 0 if fitness_calls[0] == 32 else -1
+
+        solver.fitness = solve_on_31st_iteration
+        result = solver.run_sa(max_iterations=40)
+        self.assertEqual([point["iteration"] for point in result["history"]],
+                         [1, 30, 31])
+        self.assertEqual(result["history"][-1]["acceptance"], 1.0)
+
+    def test_sa_alpha_changes_temperature_at_last_iteration(self):
+        temperatures = []
+        for alpha in (0.990, 0.999):
+            solver = ShipPlacementSolver(2, [2, 2], set(), seed=7)
+            result = solver.run_sa(
+                max_iterations=2,
+                initial_temperature=50,
+                final_temperature=0.1,
+                alpha=alpha,
+            )
+            temperatures.append(result["history"][-1]["temperature"])
+        self.assertNotEqual(temperatures[0], temperatures[1])
+
+    def test_ga_uses_requested_population_size(self):
+        result = ShipPlacementSolver(3, [1], set(), seed=7).run_ga(
+            population_size=5, generations=1, elitism=20,
+        )
+        self.assertTrue(result["solved"])
+        self.assertEqual(result["fitness_evaluations"], 5)
+
+    def test_ga_rejects_population_below_two(self):
+        with self.assertRaises(ValueError):
+            ShipPlacementSolver(3, [1], set(), seed=7).run_ga(population_size=1)
+
     def test_ga_solves_variant_with_fixed_seed(self):
         size, ships, reefs = self.load_variant()
         result = ShipPlacementSolver(size, ships, reefs, seed=42).run_ga(
@@ -150,6 +195,22 @@ class RouteAndParameterTests(unittest.TestCase):
             response = self.client.post("/api/run", json={
                 "variant": self.variant, "algorithm": "sa", "seed": 42, "sa": sa,
             })
+            self.assertEqual(response.status_code, 400)
+
+    def test_non_object_algorithm_sections_return_400(self):
+        for key in ("ga", "sa"):
+            for value in (None, "invalid", []):
+                response = self.client.post("/api/run", json={
+                    "variant": self.variant,
+                    "algorithm": "ga" if key == "ga" else "sa",
+                    key: value,
+                })
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("JSON-об'єктом", response.get_json()["error"])
+
+    def test_non_object_variant_returns_400(self):
+        for value in (None, "invalid", []):
+            response = self.client.post("/api/run", json={"variant": value})
             self.assertEqual(response.status_code, 400)
 
 
