@@ -1,0 +1,3 @@
+algorithm,success_rate,average_time,average_fitness_evaluations
+GA,1.0,0.02686187995132059,60.0
+SA,1.0,0.002345700073055923,10.6

@@ -7,30 +7,32 @@ class ShipPlacementSolver:
     def __init__(self, size, ships, reefs, seed=None):
         self.size = size
         self.ships = list(ships)
+        # The working convention is (x, y): x is the column and y is the row.
         self.reefs = set(reefs)
         self.rng = random.Random(seed)
         self.ship_indices = sorted(
             range(len(self.ships)),
             key=lambda i: (-self.ships[i], i),
         )
+        self.fitness_evaluations = 0
 
     def candidates(self, ship_index):
         length = self.ships[ship_index]
         result = []
-        for row in range(self.size):
-            for col in range(self.size):
-                if col + length <= self.size:
-                    result.append((row, col, "H"))
-                if row + length <= self.size:
-                    result.append((row, col, "V"))
+        for y in range(self.size):
+            for x in range(self.size):
+                if x + length <= self.size:
+                    result.append((x, y, "H"))
+                if y + length <= self.size:
+                    result.append((x, y, "V"))
         return result
 
     def placement_cells(self, ship_index, placement):
-        row, col, direction = placement
+        x, y, direction = placement
         length = self.ships[ship_index]
         if direction == "H":
-            return {(row, col + offset) for offset in range(length)}
-        return {(row + offset, col) for offset in range(length)}
+            return {(x + offset, y) for offset in range(length)}
+        return {(x, y + offset) for offset in range(length)}
 
     def allowed(self, ship_index, placement, occupied):
         cells = self.placement_cells(ship_index, placement)
@@ -38,11 +40,10 @@ class ShipPlacementSolver:
             return False
         if any(cell in occupied for cell in cells):
             return False
-        for cell in cells:
-            row, col = cell
-            for dr in (-1, 0, 1):
-                for dc in (-1, 0, 1):
-                    if (row + dr, col + dc) in occupied:
+        for x, y in cells:
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    if (x + dx, y + dy) in occupied:
                         return False
         return True
 
@@ -92,34 +93,74 @@ class ShipPlacementSolver:
 
         return placements, unplaced
 
-    def fitness(self, placements, unplaced):
-        placed = len(placements)
-        satisfied = 0
-        occupied = set()
+    def check_placements(self, placements):
+        violations = []
 
         for ship_index, placement in placements.items():
+            if not (isinstance(placement, tuple) and len(placement) == 3):
+                violations.append({"rule": "orientation", "ships": [ship_index],
+                                   "cells": []})
+                continue
+            x, y, direction = placement
+            if direction not in ("H", "V"):
+                violations.append({"rule": "orientation", "ships": [ship_index],
+                                   "cells": [[x, y]]})
+
             cells = self.placement_cells(ship_index, placement)
-            occupied.update(cells)
-            if all(0 <= row < self.size and 0 <= col < self.size for row, col in cells):
-                satisfied += 1
-            if not any(cell in self.reefs for cell in cells):
-                satisfied += 1
+            outside = [[cx, cy] for cx, cy in sorted(cells)
+                       if cx < 0 or cy < 0 or cx >= self.size or cy >= self.size]
+            if outside:
+                violations.append({"rule": "out_of_bounds", "ships": [ship_index],
+                                   "cells": outside})
 
-        if len(occupied) == sum(len(self.placement_cells(i, p)) for i, p in placements.items()):
-            satisfied += placed
+            reef_cells = [[cx, cy] for cx, cy in sorted(cells) if (cx, cy) in self.reefs]
+            if reef_cells:
+                violations.append({"rule": "reef_overlap", "ships": [ship_index],
+                                   "cells": reef_cells})
 
-        return 100 * placed - 100 * len(unplaced) + satisfied + self._boundary_score(placements)
+        ship_ids = sorted(placements)
+        for position, first in enumerate(ship_ids):
+            first_cells = self.placement_cells(first, placements[first])
+            for second in ship_ids[position + 1:]:
+                second_cells = self.placement_cells(second, placements[second])
+                overlap = sorted(first_cells & second_cells)
+                if overlap:
+                    violations.append({
+                        "rule": "ship_overlap",
+                        "ships": [first, second],
+                        "cells": [[x, y] for x, y in overlap],
+                    })
+                    continue
 
-    def _boundary_score(self, placements):
-        if not placements:
-            return 0.0
-        all_cells = set()
-        for ship_index, placement in placements.items():
-            all_cells.update(self.placement_cells(ship_index, placement))
-        rows = [row for row, _ in all_cells]
-        cols = [col for _, col in all_cells]
-        span = (max(rows) - min(rows) + 1) * (max(cols) - min(cols) + 1)
-        return max(0.0, 10.0 - span / (self.size * self.size))
+                touching = sorted({
+                    (x, y)
+                    for x, y in first_cells
+                    for dx in (-1, 0, 1)
+                    for dy in (-1, 0, 1)
+                    if (x + dx, y + dy) in second_cells
+                })
+                if touching:
+                    violations.append({
+                        "rule": "ship_touching",
+                        "ships": [first, second],
+                        "cells": [[x, y] for x, y in touching],
+                    })
+
+        return violations
+
+    def fitness(self, placements, unplaced):
+        violations = self.check_placements(placements)
+        weights = {
+            "orientation": 10,
+            "out_of_bounds": 20,
+            "reef_overlap": 15,
+            "ship_overlap": 25,
+            "ship_touching": 20,
+        }
+        penalty = sum(weights.get(item["rule"], 10) for item in violations)
+        penalty += 30 * len(unplaced)
+        self.fitness_evaluations += 1
+        return -penalty
 
     def run_ga(self, population_size=60, generations=100, crossover_rate=0.9,
                mutation_rate=0.15, elitism=4):
@@ -135,6 +176,7 @@ class ShipPlacementSolver:
         best_unplaced = list(range(len(self.ships)))
         best_fitness = -math.inf
         history = []
+        self.fitness_evaluations = 0
 
         for generation in range(generations):
             scored = []
@@ -154,6 +196,9 @@ class ShipPlacementSolver:
                 "best": round(best_fitness, 4),
                 "average": round(sum(item[0] for item in scored) / len(scored), 4),
             })
+
+            if best_fitness == 0:
+                break
 
             elite_count = min(elitism, population_size)
             next_population = [copy.deepcopy(item[1]) for item in scored[:elite_count]]
@@ -184,10 +229,22 @@ class ShipPlacementSolver:
 
             population = next_population
 
+        violations = self.check_placements(best_placements)
+        if best_unplaced:
+            violations.extend({
+                "rule": "unplaced_ship",
+                "ships": [ship_index],
+                "length": self.ships[ship_index],
+                "cells": [],
+            } for ship_index in best_unplaced)
+
         return {
             "placements": self.serialize_placements(best_placements),
-            "unplaced": best_unplaced,
-            "fitness": round(best_fitness, 4),
+            "unplaced": [self.ships[index] for index in best_unplaced],
+            "fitness": best_fitness,
+            "solved": best_fitness == 0,
+            "violations": violations,
+            "fitness_evaluations": self.fitness_evaluations,
             "history": history,
         }
 
@@ -196,78 +253,120 @@ class ShipPlacementSolver:
             {
                 "ship": ship_index,
                 "length": self.ships[ship_index],
-                "row": placements[ship_index][0],
-                "col": placements[ship_index][1],
+                "x": placements[ship_index][0],
+                "y": placements[ship_index][1],
                 "direction": placements[ship_index][2],
             }
             for ship_index in sorted(placements)
         ]
 
     def run_sa(self, max_iterations=3000, initial_temperature=50.0,
-               final_temperature=0.1):
+               final_temperature=0.1, alpha=None):
         max_iterations = max(1, int(max_iterations))
         initial_temperature = max(0.001, float(initial_temperature))
         final_temperature = max(0.0001, float(final_temperature))
-        if final_temperature >= initial_temperature:
-            final_temperature = initial_temperature / 100
+        if alpha is None:
+            alpha = (final_temperature / initial_temperature) ** (1 / max(1, max_iterations - 1))
+        alpha = float(alpha)
 
+        self.fitness_evaluations = 0
         current, unplaced = self.greedy_random_state()
         current_fitness = self.fitness(current, unplaced)
         best = copy.deepcopy(current)
         best_unplaced = list(unplaced)
         best_fitness = current_fitness
         history = []
+        accepted_window = 0
+        window_size = 100
 
         for iteration in range(max_iterations):
-            progress = iteration / max(1, max_iterations - 1)
-            temperature = initial_temperature * (
-                (final_temperature / initial_temperature) ** progress
-            )
+            temperature = initial_temperature * (alpha ** iteration)
             neighbour = copy.deepcopy(current)
             neighbour_unplaced = list(unplaced)
 
-            movable = list(neighbour.keys())
-            if movable:
-                ship_index = self.rng.choice(movable)
+            if neighbour_unplaced and (not neighbour or self.rng.random() < 0.55):
+                ship_index = self.rng.choice(neighbour_unplaced)
                 occupied = set()
                 for other_index, placement in neighbour.items():
-                    if other_index != ship_index:
-                        occupied.update(self.placement_cells(other_index, placement))
-
+                    occupied.update(self.placement_cells(other_index, placement))
                 candidates = self.candidates(ship_index)
                 self.rng.shuffle(candidates)
-                replaced = False
                 for candidate in candidates:
                     if self.allowed(ship_index, candidate, occupied):
                         neighbour[ship_index] = candidate
-                        replaced = True
+                        neighbour_unplaced.remove(ship_index)
                         break
-                if not replaced:
-                    neighbour.pop(ship_index, None)
-                    neighbour_unplaced.append(ship_index)
+            else:
+                if (iteration + 1) % 300 == 0:
+                    neighbour, neighbour_unplaced = self.greedy_random_state()
+                else:
+                    movable = list(neighbour.keys())
+                    if movable:
+                        ship_index = self.rng.choice(movable)
+                        occupied = set()
+                        for other_index, placement in neighbour.items():
+                            if other_index != ship_index:
+                                occupied.update(self.placement_cells(other_index, placement))
+                        candidates = self.candidates(ship_index)
+                        self.rng.shuffle(candidates)
+                        neighbour.pop(ship_index, None)
+                        neighbour_unplaced = [index for index in neighbour_unplaced if index != ship_index]
+                        neighbour_unplaced.append(ship_index)
+                        for candidate in candidates:
+                            if self.allowed(ship_index, candidate, occupied):
+                                neighbour[ship_index] = candidate
+                                neighbour_unplaced.remove(ship_index)
+                                break
 
             neighbour_fitness = self.fitness(neighbour, neighbour_unplaced)
             delta = neighbour_fitness - current_fitness
-            if delta >= 0 or self.rng.random() < math.exp(delta / max(temperature, 1e-9)):
+            accepted = delta >= 0 or self.rng.random() < math.exp(delta / max(temperature, 1e-9))
+            if accepted:
                 current = neighbour
                 unplaced = neighbour_unplaced
                 current_fitness = neighbour_fitness
+                accepted_window += 1
 
             if current_fitness > best_fitness:
                 best = copy.deepcopy(current)
                 best_unplaced = list(unplaced)
                 best_fitness = current_fitness
 
-            if (iteration + 1) % max(1, max_iterations // 100) == 0 or iteration == max_iterations - 1:
+            if best_fitness == 0:
                 history.append({
                     "iteration": iteration + 1,
+                    "current": round(current_fitness, 4),
                     "best": round(best_fitness, 4),
                     "temperature": round(temperature, 6),
+                    "acceptance": round(accepted_window / min(iteration + 1, window_size), 4),
                 })
+                break
+
+            if (iteration + 1) % 30 == 0 or iteration == 0 or iteration == max_iterations - 1:
+                history.append({
+                    "iteration": iteration + 1,
+                    "current": round(current_fitness, 4),
+                    "best": round(best_fitness, 4),
+                    "temperature": round(temperature, 6),
+                    "acceptance": round(accepted_window / window_size, 4),
+                })
+                accepted_window = 0
+
+        violations = self.check_placements(best)
+        if best_unplaced:
+            violations.extend({
+                "rule": "unplaced_ship",
+                "ships": [ship_index],
+                "length": self.ships[ship_index],
+                "cells": [],
+            } for ship_index in best_unplaced)
 
         return {
             "placements": self.serialize_placements(best),
-            "unplaced": best_unplaced,
-            "fitness": round(best_fitness, 4),
+            "unplaced": [self.ships[index] for index in best_unplaced],
+            "fitness": best_fitness,
+            "solved": best_fitness == 0,
+            "violations": violations,
+            "fitness_evaluations": self.fitness_evaluations,
             "history": history,
         }

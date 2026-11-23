@@ -24,3 +24,18 @@ python app.py
 - `templates/index.html` — розмітка сторінки.
 - `static/css/styles.css` — стилі.
 - `static/js/main.js` — робота з інтерфейсом і API.
+
+## Формат координат
+
+Рифи задаються як `[x, y]`, де `x` — номер стовпця зліва направо, а `y` —
+номер рядка зверху вниз. Початок корабля в усіх API-відповідях і таблиці UI
+також повертається як `(x, y)`.
+
+## Експерименти
+
+```powershell
+python experiments.py
+```
+
+Скрипт запускає серії GA/SA та порівняння алгоритмів і записує
+`ga_experiment.csv`, `sa_experiment.csv`, `ga_sa_comparison.csv`.
