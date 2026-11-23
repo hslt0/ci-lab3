@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Лабораторна №3 — розміщення кораблів</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+  <header><h1>Лабораторна №3 — генетичний алгоритм та імітаційний відпал</h1></header>
+  <main>
+    <div class="layout">
+      <aside>
+        <div class="card">
+          <label for="variant">Вхідні дані JSON</label>
+          <textarea id="variant"></textarea>
+          <button class="secondary" id="loadDefault" type="button">Завантажити variant04.json</button>
+        </div>
+        <div class="card">
+          <label>Алгоритм
+            <select id="algorithm">
+              <option value="both">GA + SA</option>
+              <option value="ga">Лише генетичний алгоритм</option>
+              <option value="sa">Лише імітаційний відпал</option>
+            </select>
+          </label>
+          <label>Seed (для повторюваності)<input id="seed" type="number" value="42"></label>
+          <div id="gaParams">
+            <label>Розмір популяції <input id="population" type="number" value="60"></label>
+            <label>Кількість поколінь <input id="generations" type="number" value="120"></label>
+            <label>Ймовірність схрещування <input id="crossover" type="number" min="0" max="1" step="0.05" value="0.9"></label>
+            <label>Ймовірність мутації <input id="mutation" type="number" min="0" max="1" step="0.01" value="0.15"></label>
+            <label>Елітизм <input id="elitism" type="number" value="4"></label>
+          </div>
+          <div id="saParams">
+            <label>Кількість ітерацій <input id="iterations" type="number" value="3000"></label>
+            <label>Початкова температура <input id="initialTemperature" type="number" value="50"></label>
+            <label>Кінцева температура <input id="finalTemperature" type="number" step="0.01" value="0.1"></label>
+          </div>
+          <div class="buttons">
+            <button id="run">Запустити</button>
+          </div>
+          <p id="error" class="error"></p>
+        </div>
+      </aside>
+      <section>
+        <div class="card">
+          <div class="metric" id="metrics"></div>
+        </div>
+        <div class="card">
+          <h3>Результат ГА</h3>
+          <div id="gaGrid"></div>
+        </div>
+        <div class="card">
+          <h3>Результат SA</h3>
+          <div id="saGrid"></div>
+        </div>
+        <div class="card">
+          <h3>Порівняння найкращих значень</h3>
+          <table>
+            <thead><tr><th>Алгоритм</th><th>Фітнес</th><th>Розміщено</th><th>Не розміщено</th></tr></thead>
+            <tbody id="summary"></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h3>Еволюція фітнес-функції</h3>
+          <canvas id="chart" width="900" height="280"></canvas>
+        </div>
+      </section>
+    </div>
+  </main>
+  <script>
+    window.defaultVariant = {{ default_variant | tojson }};
+  </script>
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
