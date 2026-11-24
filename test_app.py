@@ -62,13 +62,6 @@ class SolverTests(unittest.TestCase):
         invalid = {0: (0, 0, "H"), 1: (1, 1, "V")}
         self.assertLess(solver.fitness(invalid, []), 0)
 
-    def test_sa_places_initially_unplaced_ship(self):
-        solver = ShipPlacementSolver(8, [2], set(), seed=7)
-        solver.greedy_random_state = lambda: ({}, [0])
-        result = solver.run_sa(max_iterations=300)
-        self.assertTrue(result["solved"])
-        self.assertEqual(result["unplaced"], [])
-
     def test_sa_acceptance_ratio_uses_logged_iteration_window(self):
         result = ShipPlacementSolver(3, [1], set(), seed=7).run_sa(max_iterations=1)
         self.assertEqual(result["history"][0]["iteration"], 1)

@@ -18,12 +18,23 @@ python app.py
 ## Структура проєкту
 
 - `app.py` — створення Flask-застосунку та точка запуску.
-- `routes.py` — веб-маршрути й API.
+- `routes.py` — веб-маршрути й API (`/api/run`).
 - `validation.py` — перевірка вхідного JSON-варіанта.
-- `solver.py` — спільна логіка розміщення та алгоритми GA/SA.
+- `solver.py` — спільна логіка розміщення, перевірка правил, фітнес, GA та SA.
+- `experiments.py` — дослідження параметрів GA/SA та порівняння алгоритмів.
+- `make_hard_variant.py` — генерація складного варіанта `variant_hard.json`.
+- `test_app.py` — модульні тести.
+- `variant04.json` — варіант студента; `variant_hard.json` — складніший варіант.
 - `templates/index.html` — розмітка сторінки.
 - `static/css/styles.css` — стилі.
 - `static/js/main.js` — робота з інтерфейсом і API.
+- `*.csv` — результати експериментів (`_hard` — для складного варіанта).
+
+## Тести
+
+```powershell
+python -m unittest
+```
 
 ## Формат координат
 

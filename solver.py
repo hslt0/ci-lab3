@@ -77,27 +77,6 @@ class ShipPlacementSolver:
 
         return placements, unplaced
 
-    def greedy_random_state(self):
-        occupied = set()
-        placements = {}
-        unplaced = []
-
-        for ship_index in self.ship_indices:
-            candidates = self.candidates(ship_index)
-            self.rng.shuffle(candidates)
-            selected = None
-            for candidate in candidates:
-                if self.allowed(ship_index, candidate, occupied):
-                    selected = candidate
-                    break
-            if selected is None:
-                unplaced.append(ship_index)
-            else:
-                placements[ship_index] = selected
-                occupied.update(self.placement_cells(ship_index, selected))
-
-        return placements, unplaced
-
     def check_placements(self, placements):
         violations = []
 
