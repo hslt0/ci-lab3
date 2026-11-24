@@ -3,7 +3,7 @@ import math
 import random
 
 
-SA_RESTART_INTERVAL = 300
+SA_LOCAL_MOVE_PROBABILITY = 0.7
 # Keep gene preferences meaningful instead of repairing across every candidate.
 GA_DECODE_ATTEMPTS = 40
 
@@ -268,8 +268,30 @@ class ShipPlacementSolver:
             for ship_index in sorted(placements)
         ]
 
+    def random_chromosome(self):
+        return [self.rng.randrange(self.size * self.size * 2)
+                for _ in range(len(self.ship_indices))]
+
+    def neighbour_chromosome(self, chromosome):
+        """Change one gene: small shift of the start index or a random new value."""
+        neighbour = list(chromosome)
+        position = self.rng.randrange(len(neighbour))
+        if self.rng.random() < SA_LOCAL_MOVE_PROBABILITY:
+            neighbour[position] += self.rng.choice((-1, 1, -self.size, self.size))
+            neighbour[position] %= self.size * self.size * 2
+        else:
+            neighbour[position] = self.rng.randrange(self.size * self.size * 2)
+        return neighbour
+
     def run_sa(self, max_iterations=3000, initial_temperature=50.0,
                final_temperature=0.1, alpha=None):
+        """Simulated annealing over the same chromosome as the GA.
+
+        State: gene vector (decoded to a placement by the repairing decoder).
+        Energy: E = -fitness = weighted rule violations + unplaced ships (0 = solved).
+        Move: change one gene. Acceptance: Metropolis, exp(-dE / T).
+        Cooling: T_k = T0 * alpha^k.
+        """
         max_iterations = max(1, int(max_iterations))
         initial_temperature = max(0.001, float(initial_temperature))
         final_temperature = max(0.0001, float(final_temperature))
@@ -278,10 +300,11 @@ class ShipPlacementSolver:
         alpha = float(alpha)
 
         self.fitness_evaluations = 0
-        current, unplaced = self.greedy_random_state()
-        current_fitness = self.fitness(current, unplaced)
-        best = copy.deepcopy(current)
-        best_unplaced = list(unplaced)
+        current = self.random_chromosome()
+        current_placements, current_unplaced = self.decode(current)
+        current_fitness = self.fitness(current_placements, current_unplaced)
+        best = dict(current_placements)
+        best_unplaced = list(current_unplaced)
         best_fitness = current_fitness
         history = []
         accepted_window = 0
@@ -290,69 +313,21 @@ class ShipPlacementSolver:
         for iteration in range(max_iterations):
             iterations_in_window += 1
             temperature = initial_temperature * (alpha ** iteration)
-            neighbour = copy.deepcopy(current)
-            neighbour_unplaced = list(unplaced)
-
-            if neighbour_unplaced and (not neighbour or self.rng.random() < 0.55):
-                ship_index = self.rng.choice(neighbour_unplaced)
-                occupied = set()
-                for other_index, placement in neighbour.items():
-                    occupied.update(self.placement_cells(other_index, placement))
-                candidates = self.candidates(ship_index)
-                self.rng.shuffle(candidates)
-                for candidate in candidates:
-                    if self.allowed(ship_index, candidate, occupied):
-                        neighbour[ship_index] = candidate
-                        neighbour_unplaced.remove(ship_index)
-                        break
-            else:
-                if (iteration + 1) % SA_RESTART_INTERVAL == 0:
-                    # Random restart helps the search escape stagnation.
-                    neighbour, neighbour_unplaced = self.greedy_random_state()
-                else:
-                    movable = list(neighbour.keys())
-                    if movable:
-                        ship_index = self.rng.choice(movable)
-                        occupied = set()
-                        for other_index, placement in neighbour.items():
-                            if other_index != ship_index:
-                                occupied.update(self.placement_cells(other_index, placement))
-                        candidates = self.candidates(ship_index)
-                        self.rng.shuffle(candidates)
-                        neighbour.pop(ship_index, None)
-                        neighbour_unplaced = [index for index in neighbour_unplaced if index != ship_index]
-                        neighbour_unplaced.append(ship_index)
-                        for candidate in candidates:
-                            if self.allowed(ship_index, candidate, occupied):
-                                neighbour[ship_index] = candidate
-                                neighbour_unplaced.remove(ship_index)
-                                break
-
-            neighbour_fitness = self.fitness(neighbour, neighbour_unplaced)
+            neighbour = self.neighbour_chromosome(current)
+            placements, unplaced = self.decode(neighbour)
+            neighbour_fitness = self.fitness(placements, unplaced)
             delta = neighbour_fitness - current_fitness
-            accepted = delta >= 0 or self.rng.random() < math.exp(delta / max(temperature, 1e-9))
-            if accepted:
+            if delta >= 0 or self.rng.random() < math.exp(delta / max(temperature, 1e-9)):
                 current = neighbour
-                unplaced = neighbour_unplaced
                 current_fitness = neighbour_fitness
                 accepted_window += 1
+                if current_fitness > best_fitness:
+                    best = dict(placements)
+                    best_unplaced = list(unplaced)
+                    best_fitness = current_fitness
 
-            if current_fitness > best_fitness:
-                best = copy.deepcopy(current)
-                best_unplaced = list(unplaced)
-                best_fitness = current_fitness
-
-            if best_fitness == 0:
-                history.append({
-                    "iteration": iteration + 1,
-                    "current": round(current_fitness, 4),
-                    "best": round(best_fitness, 4),
-                    "temperature": round(temperature, 6),
-                    "acceptance": round(accepted_window / iterations_in_window, 4),
-                })
-                break
-
-            if (iteration + 1) % 30 == 0 or iteration == 0 or iteration == max_iterations - 1:
+            if (best_fitness == 0 or (iteration + 1) % 30 == 0 or iteration == 0
+                    or iteration == max_iterations - 1):
                 history.append({
                     "iteration": iteration + 1,
                     "current": round(current_fitness, 4),
@@ -362,6 +337,8 @@ class ShipPlacementSolver:
                 })
                 accepted_window = 0
                 iterations_in_window = 0
+            if best_fitness == 0:
+                break
 
         violations = self.check_placements(best)
         if best_unplaced:
